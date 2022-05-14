@@ -18,8 +18,7 @@ app.listen(port, () => {
 // doctor-portal IZ9Ct9zCgCnpK5Er
 
 const { MongoClient, ServerApiVersion } = require("mongodb");
-const uri =
-  "mongodb+srv://doctor-portal:IZ9Ct9zCgCnpK5Er@cluster0.dt6dv.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+const uri = `${process.env.URI}`;
 const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
