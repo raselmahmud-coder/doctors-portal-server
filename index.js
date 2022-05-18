@@ -60,8 +60,7 @@ async function run() {
     app.get("/admin/:email", async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email: email });
-      const isAdmin = user.role === "admin";
-      console.log("from adim",isAdmin);
+      const isAdmin = user?.role === "admin";
       res.send({ admin: isAdmin });
     });
     // make a admin
@@ -71,7 +70,7 @@ async function run() {
       const requesterAccount = await userCollection.findOne({
         email: requester,
       });
-      if (requesterAccount.role === "admin") {
+      if (requesterAccount?.role === "admin") {
         const filter = { email: email };
         const updateDoc = {
           $set: { role: "admin" },
