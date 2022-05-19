@@ -45,12 +45,13 @@ function verifyJWT(req, res, next) {
 async function run() {
   try {
     await client.connect();
-
+    //  all collections here
     const servicesCollection = client
       .db("doctor_portal")
       .collection("services");
     const bookingCollection = client.db("doctor_portal").collection("booking");
     const userCollection = client.db("doctor_portal").collection("user");
+    const doctorsCollection = client.db("doctor_portal").collection("doctors");
     // all users
     app.get("/all-user", verifyJWT, async (req, res) => {
       const users = await userCollection.find().toArray();
@@ -151,10 +152,17 @@ async function run() {
 
     app.get("/services", async (req, res) => {
       const query = {};
-      const cursor = servicesCollection.find(query);
+      const cursor = servicesCollection.find(query).project({ name: 1 });
       const result = await cursor.toArray();
       res.send(result);
     });
+    // for doctor post
+    app.post("/doctor", async (req, res) => {
+      const doctor = req.body;
+      console.log(doctor);
+      const result = await doctorsCollection.insertOne(doctor)
+      res.send(result)
+    })
   } catch (err) {
     console.log(err);
   }
