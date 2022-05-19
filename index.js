@@ -42,6 +42,50 @@ function verifyJWT(req, res, next) {
   });
 }
 
+function sendAppointmentEmail(booking) {
+  const { patient, patientName, date, slot, treatment, phone } = booking;
+  /**
+ *
+ * Run:
+ *
+ */
+const mailjet = require('node-mailjet').connect(
+  process.env.MJ_APIKEY_PUBLIC,
+  process.env.MJ_APIKEY_PRIVATE
+)
+const request = mailjet.post('send', { version: 'v3.1' }).request({
+  Messages: [
+    {
+      "From": {
+        "Email": "raselmahmud98262@gmail.com",
+        "Name": "RASEL"
+      },
+      To: [
+        {
+          "Email": "raselmahmud454b@gmail.com",
+          "Name": `${patientName}`
+        },
+      ],
+      "Subject": `You have booked an appointment on ${date}`,
+      "TextPart": `You have booked an appointment on ${date}`,
+      "HTMLPart": `<h2>Hello patient You have an appointment on ${date}.</h2>
+      <h5>Please add to your calender this date</h5>
+      <a href="https://google.com">for reminder mail click here</a>
+      `,
+    },
+  ],
+})
+request
+  .then(result => {
+    console.log("success",result.body)
+  })
+  .catch(err => {
+    console.log("getting err",err.statusCode)
+  })
+
+
+}
+
 async function run() {
   try {
     await client.connect();
@@ -52,6 +96,18 @@ async function run() {
     const bookingCollection = client.db("doctor_portal").collection("booking");
     const userCollection = client.db("doctor_portal").collection("user");
     const doctorsCollection = client.db("doctor_portal").collection("doctors");
+    // verify admin role
+    const verifyAdmin = async (req, res, next) => {
+      const requester = req.decoded.email;
+      const requesterAccount = await userCollection.findOne({
+        email: requester,
+      });
+      if (requesterAccount.role === "admin") {
+        next();
+      } else {
+        res.status(403).send({ message: "Forbidden request" });
+      }
+    };
     // all users
     app.get("/all-user", verifyJWT, async (req, res) => {
       const users = await userCollection.find().toArray();
@@ -65,22 +121,14 @@ async function run() {
       res.send({ admin: isAdmin });
     });
     // make a admin
-    app.put("/user/admin/:email", verifyJWT, async (req, res) => {
+    app.put("/user/admin/:email", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.params.email;
-      const requester = req.decoded.email;
-      const requesterAccount = await userCollection.findOne({
-        email: requester,
-      });
-      if (requesterAccount?.role === "admin") {
-        const filter = { email: email };
-        const updateDoc = {
-          $set: { role: "admin" },
-        };
-        const result = await userCollection.updateOne(filter, updateDoc);
-        res.send(result);
-      } else {
-        res.status(402).send({ message: " Your are n't admin" });
-      }
+      const filter = { email: email };
+      const updateDoc = {
+        $set: { role: "admin" },
+      };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
     });
     // insert or update users
     app.put("/user/:email", async (req, res) => {
@@ -146,6 +194,7 @@ async function run() {
         return res.send({ success: false, booking: exists });
       } else {
         const result = await bookingCollection.insertOne(booking);
+        sendAppointmentEmail(booking);
         res.send({ success: true, result });
       }
     });
@@ -157,12 +206,23 @@ async function run() {
       res.send(result);
     });
     // for doctor post
-    app.post("/doctor", async (req, res) => {
+    app.post("/doctor", verifyJWT, verifyAdmin, async (req, res) => {
       const doctor = req.body;
-      console.log(doctor);
-      const result = await doctorsCollection.insertOne(doctor)
-      res.send(result)
-    })
+      // console.log(doctor);
+      const result = await doctorsCollection.insertOne(doctor);
+      res.send(result);
+    });
+    // get all doctors
+    app.get("/doctors", verifyJWT, verifyAdmin, async (req, res) => {
+      const doctors = await doctorsCollection.find().toArray();
+      res.send(doctors);
+    });
+    // delete a doctor
+    app.delete("/doctor/:email", verifyJWT, verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      const doctor = await doctorsCollection.deleteOne({ email: email });
+      res.send(doctor);
+    });
   } catch (err) {
     console.log(err);
   }
