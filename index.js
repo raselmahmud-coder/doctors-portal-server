@@ -1,8 +1,9 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const app = express();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 // middle ware
@@ -17,7 +18,7 @@ app.listen(port, () => {
   console.log(`Doctors portal app listening on port ${port}`);
 });
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `${process.env.URI}`;
 const client = new MongoClient(uri, {
   useNewUrlParser: true,
@@ -44,46 +45,39 @@ function verifyJWT(req, res, next) {
 
 function sendAppointmentEmail(booking) {
   const { patient, patientName, date, slot, treatment, phone } = booking;
-  /**
- *
- * Run:
- *
- */
-const mailjet = require('node-mailjet').connect(
-  process.env.MJ_APIKEY_PUBLIC,
-  process.env.MJ_APIKEY_PRIVATE
-)
-const request = mailjet.post('send', { version: 'v3.1' }).request({
-  Messages: [
-    {
-      "From": {
-        "Email": "raselmahmud98262@gmail.com",
-        "Name": "RASEL"
-      },
-      To: [
-        {
-          "Email": "raselmahmud454b@gmail.com",
-          "Name": `${patientName}`
+  const mailjet = require("node-mailjet").connect(
+    process.env.MJ_APIKEY_PUBLIC,
+    process.env.MJ_APIKEY_PRIVATE
+  );
+  const request = mailjet.post("send", { version: "v3.1" }).request({
+    Messages: [
+      {
+        From: {
+          Email: "raselmahmud98262@gmail.com",
+          Name: "RASEL",
         },
-      ],
-      "Subject": `You have booked an appointment on ${date}`,
-      "TextPart": `You have booked an appointment on ${date}`,
-      "HTMLPart": `<h2>Hello patient You have an appointment on ${date}.</h2>
+        To: [
+          {
+            Email: `${patient}`,
+            Name: `${patientName}`,
+          },
+        ],
+        Subject: `You have booked an appointment on ${date}`,
+        TextPart: `You have booked an appointment on ${date} treatment is ${treatment}`,
+        HTMLPart: `<h2>Hello patient You have an appointment on ${date}.</h2>
       <h5>Please add to your calender this date</h5>
       <a href="https://google.com">for reminder mail click here</a>
       `,
-    },
-  ],
-})
-request
-  .then(result => {
-    console.log("success",result.body)
-  })
-  .catch(err => {
-    console.log("getting err",err.statusCode)
-  })
-
-
+      },
+    ],
+  });
+  request
+    .then((result) => {
+      console.log("success", result.body);
+    })
+    .catch((err) => {
+      console.log("getting err", err.statusCode);
+    });
 }
 
 async function run() {
@@ -170,6 +164,15 @@ async function run() {
       });
       res.send(services);
     });
+    // get a specific booking for payment
+    app.get("/booking/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const booking = await bookingCollection.findOne(query);
+      // console.log("A unique book",booking);
+      res.send(booking);
+    });
+    // get all booking record
     app.get("/booking", verifyJWT, async (req, res) => {
       const patient = req.query.patient;
       const decodedEmail = req.decoded.email;
@@ -222,6 +225,20 @@ async function run() {
       const email = req.params.email;
       const doctor = await doctorsCollection.deleteOne({ email: email });
       res.send(doctor);
+    });
+    // make a payment intent post api
+    app.post('/create-payment-intent', async(req, res) =>{
+      const service = req.body;
+      console.log("service",service);
+      const price = service.price;
+      const amount = price * 100;
+      console.log("amount",typeof amount);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount : amount,
+        currency: 'usd',
+        payment_method_types:['card']
+      });
+      res.send({clientSecret: paymentIntent.client_secret})
     });
   } catch (err) {
     console.log(err);

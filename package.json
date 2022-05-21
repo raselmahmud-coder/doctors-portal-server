@@ -18,6 +18,7 @@
     "jsonwebtoken": "^8.5.1",
     "mongodb": "^4.6.0",
     "node-mailjet": "^3.4.1",
-    "nodemailer": "^6.7.5"
+    "nodemailer": "^6.7.5",
+    "stripe": "^9.2.0"
   }
 }
