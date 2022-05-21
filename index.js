@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const app = express();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 // middle ware
@@ -42,9 +42,9 @@ function verifyJWT(req, res, next) {
     // console.log("decoded", decoded);
   });
 }
-
+// email sent user for booking appointment
 function sendAppointmentEmail(booking) {
-  const { patient, patientName, date, slot, treatment, phone } = booking;
+  const { patient, patientName, date, slot, treatment } = booking;
   const mailjet = require("node-mailjet").connect(
     process.env.MJ_APIKEY_PUBLIC,
     process.env.MJ_APIKEY_PRIVATE
@@ -54,7 +54,7 @@ function sendAppointmentEmail(booking) {
       {
         From: {
           Email: "raselmahmud98262@gmail.com",
-          Name: "RASEL",
+          Name: "Portal",
         },
         To: [
           {
@@ -64,7 +64,46 @@ function sendAppointmentEmail(booking) {
         ],
         Subject: `You have booked an appointment on ${date}`,
         TextPart: `You have booked an appointment on ${date} treatment is ${treatment}`,
-        HTMLPart: `<h2>Hello patient You have an appointment on ${date}.</h2>
+        HTMLPart: `<h2>Hello patient You have an appointment on ${date} treatment is ${treatment}</h2>
+      <h5>Please add to your calender this time ${slot}</h5>
+      <a href="https://google.com">for reminder mail click here</a>
+      `,
+      },
+    ],
+  });
+  request
+    .then((result) => {
+      console.log("success", result.body);
+    })
+    .catch((err) => {
+      console.log("getting err", err.statusCode);
+    });
+}
+// email sent user for payment confirmed
+function sendPaymentConfirmEmail(info) {
+  const { patient, patientName, date, slot, treatment, transactionId, price } = info;
+  const mailjet = require("node-mailjet").connect(
+    process.env.MJ_APIKEY_PUBLIC,
+    process.env.MJ_APIKEY_PRIVATE
+  );
+  const request = mailjet.post("send", { version: "v3.1" }).request({
+    Messages: [
+      {
+        From: {
+          Email: "raselmahmud98262@gmail.com",
+          Name: "Doctors Portal",
+        },
+        To: [
+          {
+            Email: `${patient}`,
+            Name: `${patientName}`,
+          },
+        ],
+        Subject: `Payment is success for an appointment on ${date}`,
+        TextPart: `Payment is success for an appointment on ${date} treatment is ${treatment}`,
+        HTMLPart: `<h2>Hello ${patientName} You have an appointment on ${date} ${slot}.</h2>
+        <li>your transaction id ${transactionId}</li>
+        <li>Service price ${price}</li>
       <h5>Please add to your calender this date</h5>
       <a href="https://google.com">for reminder mail click here</a>
       `,
@@ -90,6 +129,9 @@ async function run() {
     const bookingCollection = client.db("doctor_portal").collection("booking");
     const userCollection = client.db("doctor_portal").collection("user");
     const doctorsCollection = client.db("doctor_portal").collection("doctors");
+    const paymentsCollection = client
+      .db("doctor_portal")
+      .collection("payments");
     // verify admin role
     const verifyAdmin = async (req, res, next) => {
       const requester = req.decoded.email;
@@ -227,18 +269,39 @@ async function run() {
       res.send(doctor);
     });
     // make a payment intent post api
-    app.post('/create-payment-intent', async(req, res) =>{
+    app.post("/create-payment-intent", verifyJWT, async (req, res) => {
       const service = req.body;
-      console.log("service",service);
+      // console.log("service", service);
       const price = service.price;
       const amount = price * 100;
-      console.log("amount",typeof amount);
+      // console.log("amount", typeof amount);
       const paymentIntent = await stripe.paymentIntents.create({
-        amount : amount,
-        currency: 'usd',
-        payment_method_types:['card']
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
       });
-      res.send({clientSecret: paymentIntent.client_secret})
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+    // update for payment success
+    app.patch("/booking/:id", async (req, res) => {
+      const id = req.params.id;
+      const payment = req.body;
+      const filter = { _id: ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          paid: true,
+          transactionId: payment.transactionId,
+        },
+      };
+      const result = await paymentsCollection.insertOne(payment);
+      const updatedBooking = await bookingCollection.updateOne(
+        filter,
+        updateDoc
+      );
+      const find = await bookingCollection.findOne(filter);
+      sendPaymentConfirmEmail(find);
+      console.log("update ingo booking",find);
+      res.send(updateDoc);
     });
   } catch (err) {
     console.log(err);
